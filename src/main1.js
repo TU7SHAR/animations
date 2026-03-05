@@ -77,8 +77,14 @@ composer.addPass(bloomPass);
 // audio
 const animProxy = { time: 0 };
 
-window.addEventListener("click", () => {
-  initMic();
+["click", "touchstart"].forEach((eventType) => {
+  window.addEventListener(
+    eventType,
+    () => {
+      initMic();
+    },
+    { once: true },
+  );
 });
 
 gsap.to(animProxy, {
