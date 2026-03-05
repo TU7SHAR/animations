@@ -3,12 +3,12 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import gsap from "gsap";
-import "./style.css";
 import { initMic, getAudioData } from "./mic.js";
+import { createVisualizer, numPoints } from "./wave.js";
+import "./style.css";
 
-// --- Scene Setup ---
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x050505);
+scene.background = new THREE.Color(0x000000);
 
 const camera = new THREE.PerspectiveCamera(
   35,
@@ -16,105 +16,89 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   75,
 );
-camera.position.z = 15;
+camera.position.z = 20;
 
 const canvas = document.getElementById("canvas");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-// --- Geometry & Colors ---
-const numPoints = 500;
-const positions = new Float32Array(numPoints * 3);
-const colors = new Float32Array(numPoints * 3);
-
-const color1 = new THREE.Color(0.7, 0.0, 1.0);
-const color2 = new THREE.Color(0.0, 1.0, 0.4);
-const color3 = new THREE.Color(1.0, 0.8, 0.0);
-
-for (let i = 0; i < numPoints; i++) {
-  const progress = i / (numPoints - 1);
-  const x = progress * 20 - 10;
-
-  positions[i * 3] = x;
-  positions[i * 3 + 1] = 0;
-  positions[i * 3 + 2] = 0;
-
-  const vertexColor = new THREE.Color();
-  if (progress < 0.5) {
-    vertexColor.lerpColors(color1, color2, progress * 2.0);
-  } else {
-    vertexColor.lerpColors(color2, color3, (progress - 0.5) * 2.0);
-  }
-
-  colors[i * 3] = vertexColor.r * 2.0;
-  colors[i * 3 + 1] = vertexColor.g * 2.0;
-  colors[i * 3 + 2] = vertexColor.b * 2.0;
-}
-
-const geometry = new THREE.BufferGeometry();
-geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-
-const material = new THREE.LineBasicMaterial({
-  vertexColors: true,
-});
-const line = new THREE.Line(geometry, material);
-scene.add(line);
-
-// --- Post-Processing ---
-const renderScene = new RenderPass(scene, camera);
-const bloomPass = new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight),
-  2.0,
-  0.5,
-  0.0,
-);
 const composer = new EffectComposer(renderer);
-composer.addPass(renderScene);
-composer.addPass(bloomPass);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(
+  new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    3.0,
+    0.5,
+    0.1,
+  ),
+);
 
-// audio
+const { main, ref } = createVisualizer(scene);
+const tempColor = new THREE.Color();
 const animProxy = { time: 0 };
 
-["click", "touchstart"].forEach((eventType) => {
-  window.addEventListener(
-    eventType,
-    () => {
-      initMic();
-    },
-    { once: true },
-  );
-});
-
 gsap.to(animProxy, {
-  time: 100,
-  duration: 100,
+  time: 1000,
+  duration: 1000,
   ease: "none",
   repeat: -1,
   onUpdate: () => {
-    const posArray = line.geometry.attributes.position.array;
-    const t = animProxy.time;
-
     let volume = getAudioData();
+    if (volume < 0.01) volume = 0;
+    const t = animProxy.time * 0.7;
 
-    if (volume < 0.02) volume = 0;
+    const pos = main.geometry.attributes.position.array;
+    const refPos = ref.geometry.attributes.position.array;
+    const col = main.geometry.attributes.color.array;
+    const rCol = ref.geometry.attributes.color.array;
 
     for (let i = 0; i < numPoints; i++) {
       const progress = i / (numPoints - 1);
+      const x = progress * 24 - 12;
 
-      const wave1 = Math.sin(progress * 12.0 + t * 12.0) * 0.6;
-      const wave2 = Math.sin(progress * 28.0 + t * 18.0) * 0.25;
-      const wave3 = Math.sin(progress * 55.0 + t * 30.0) * 0.1;
+      // --- THE CAGE MATH ---
+      const base = Math.sin(progress * 7.0 + t * 2.0);
+      const detail = Math.sin(progress * 35.0 - t * 5.0) * 0.4;
+      const electric = Math.sin(progress * 16.0 + t * 2.0) * 0.1;
 
-      const smoothCurve = wave1 + wave2 + wave3;
+      let combined = base + detail + electric;
+
+      // STIFFNESS: Sharpen peaks using:
+      // $$f(x) = \text{sign}(x) \cdot |x|^{2.2}$$
+      let finalY = Math.sign(combined) * Math.pow(Math.abs(combined), 2.2);
+
       const mask = Math.sin(progress * Math.PI);
+      const amp = volume * 6.0;
 
-      const amplitude = volume * 25.0;
-      posArray[i * 3 + 1] = smoothCurve * mask * amplitude;
+      // 1. Main Wave Position
+      pos[i * 3] = x;
+      pos[i * 3 + 1] = finalY * mask * amp;
+      pos[i * 3 + 2] = 0;
+
+      // 2. Reflection Position (THE "NO-CLASH" FIX)
+      // We removed the negative multiplier. Now, when Main goes down,
+      // Ref also goes down, keeping the gap constant.
+      refPos[i * 3] = x;
+      refPos[i * 3 + 1] = finalY * mask * amp * 0.5;
+      refPos[i * 3 + 2] = 0;
+
+      // Color Gradient (Purple -> Cyan)
+      let hue = (0.75 + progress * 0.3) % 1.0;
+      tempColor.setHSL(hue, 1.0, 0.6);
+
+      col[i * 3] = tempColor.r * 2.5;
+      col[i * 3 + 1] = tempColor.g * 2.5;
+      col[i * 3 + 2] = tempColor.b * 2.5;
+
+      rCol[i * 3] = col[i * 3];
+      rCol[i * 3 + 1] = col[i * 3 + 1];
+      rCol[i * 3 + 2] = col[i * 3 + 2];
     }
-
-    line.geometry.attributes.position.needsUpdate = true;
+    main.geometry.attributes.position.needsUpdate = true;
+    main.geometry.attributes.color.needsUpdate = true;
+    ref.geometry.attributes.position.needsUpdate = true;
+    ref.geometry.attributes.color.needsUpdate = true;
   },
 });
 
@@ -130,3 +114,7 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   composer.setSize(window.innerWidth, window.innerHeight);
 });
+
+["click", "touchstart"].forEach((ev) =>
+  window.addEventListener(ev, () => initMic(), { once: true }),
+);
