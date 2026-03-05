@@ -2,3 +2,68 @@
   margin: 0;
   padding: 0;
 }
+body {
+  overflow: hidden;
+  background-color: #111113;
+}
+/* Reset and Base Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  overflow: hidden;
+  background-color: #111113; /* Corrected hex format */
+  font-family: "Inter", sans-serif; /* A clean modern font */
+}
+
+/* UI Overlay Layer */
+.ui-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  padding: 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 10; /* Ensures it stays above the canvas */
+  pointer-events: none; /* Allows clicks to pass through to canvas if needed */
+}
+
+.logo {
+  color: #ffffff;
+  font-weight: 800;
+  letter-spacing: 2px;
+  pointer-events: auto;
+}
+
+.nav-links {
+  list-style: none;
+  display: flex;
+  gap: 2rem;
+  pointer-events: auto;
+}
+
+.nav-links a {
+  color: rgba(255, 255, 255, 0.6);
+  text-decoration: none;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  transition: color 0.3s ease;
+}
+
+.nav-links a:hover,
+.nav-links a.active {
+  color: #ffffff;
+}
+
+/* Canvas background */
+#canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  outline: none;
+}
